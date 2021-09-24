@@ -1,0 +1,584 @@
+---
+title: "Time Series HW6"
+author: '106070020'
+date: "2021年5月10日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 姓名：李嘉蓉、何羿樺
+```{r ,message=FALSE, warning=FALSE}
+library(gtrendsR)
+library(astsa)
+library(aTSA)
+library(forecast)
+library(strucchange)
+library(ggplot2)
+library(ggthemes)
+library(forecast)
+library(tseries)
+library(Metrics)
+```
+
+## Dataset Flu 
+### Basic information
+此為關鍵字為flu之資料集，並針對其作線圖及直方圖。
+```{r}
+x = gtrends("flu", time="all") 
+plot(x)
+names(x)
+dim(x$interest_over_time)
+hist(x$interest_over_time[,2], 10) 
+head(x$related_topics) 
+
+```
+
+### EDA
+```{r}
+us_flu<-x$interest_over_time[,1:2]
+str(us_flu)
+us_flu[,1]<-as.factor(us_flu[,1])
+attach(us_flu)
+fluts<-ts(hits,c(2004,1),c(2021,4),12)
+str(fluts)
+fluts
+frequency(fluts)
+cycle(fluts)
+summary(fluts)
+```
+
+#### Box-cox
+利用Box-Cox transformation，使轉換後的資料變異數齊一，更似常態分佈。 其中，計算出的lambda值為-0.2739011，並將轉換後的資料繪製成圖。
+```{r}
+par(mfrow=c(1,1))
+flu<-ts(x$interest_over_time[,2])
+lambda <- BoxCox.lambda(flu)
+print(lambda)
+plot.ts(BoxCox(flu, lambda = lambda), main='Box-Cox transformation')
+```
+
+#### TS-plot
+```{r}
+plot(fluts,xlab="Year", ylab = "mlb hits",
+     main="Monthly US flu hits from 2004 to 2021")
+```
+
+#### ACF of fluts
+繪製資料之ACF圖
+```{r}
+autoplot(acf(fluts,plot=FALSE))+ 
+  labs(title="Correlogram of Monthly US flu hits from 2004 to 2021") + theme_classic()
+```
+
+#### PACF of fluts
+繪製資料之PACF圖
+```{r}
+autoplot(pacf(fluts,plot=FALSE))+ 
+  labs(title=" Partial Correlogram of Monthly US flu hits from 2004 to 2021") + theme_classic()
+```
+
+#### Boxplot
+繪製資料之盒鬚圖，可看出2004~2021平均而言，關鍵字搜尋次數於10月份最多，7月最少。
+```{r}
+boxplot(fluts~cycle(fluts),xlab="Month", ylab = "mlb hits" 
+        ,main ="Monthly US flu hits from 2004 to 2021")
+```
+
+#### decomposition
+將原始資料、趨勢、季節性、殘差分別繪製成圖。
+```{r}
+decomp_fluts <- decompose(fluts,"multiplicative")
+autoplot(decomp_fluts) + theme_classic()
+```
+
+### Fitting Model method 1
+
+#### Test stationality
+以ADF test檢定平穩性，檢定結果顯著，此資料集為平穩序列。
+```{r}
+adf.test(fluts)
+```
+
+#### Fit arima
+方法一將以auto.arima函數擬和模型。可得結果為ARIMA(1,0,2)。並可知AIC=1563.18。
+```{r}
+arima_fluts <- auto.arima(fluts)
+arima_fluts
+```
+
+#### AIC 
+試在ARMA(i,0,0)，i從1到20中，尋找出AIC最小值。可得結果為AIC=1566.922。
+```{r}
+out = matrix(0,20,4)
+z = x$interest_over_time[,2]
+for (i in 1:20){
+  fit = arima(z, order=c(i,0,0), method="ML")
+  out[i,] = c(i, fit$loglik, fit$aic, BIC(fit))
+}   
+colnames(out) = c("p","loglik","AIC","BIC")
+out = as.data.frame(out)
+head(out)
+min(out$AIC)
+```
+
+#### AIC plot
+繪製AIC curve，可知在ARMA(7,0,0)時，AIC值達最小。可看出其值大於方才由auto.arima函數擬和出模型的AIC值。推測原因為真實模型不在candidate model中，故無法藉由此information criteria搜尋至最佳模型。
+```{r}
+ts.plot(out$AIC, xlab="AR order", lwd=2) # plot log-likelihood v.s. AR order
+ts.plot(out[,3:4], col=1:2, lwd=2, xlab="AR order") #plot AIC and BIC v.s. AR order 
+legend("topleft", legend=c("AIC","BIC"), lty=1, col=1:2, lwd=2, bty="n")
+```
+
+#### Forcasting
+繪製36步預測，並加上信賴區間。
+```{r}
+fore_fluts <- forecast(arima_fluts, level = c(95), h = 36)
+autoplot(fore_fluts) + theme_classic()
+```
+
+#### Residual
+對殘差作圖分析，可從ACF圖中看出直接落於95%信賴區間中，顯示此模型對相關結構作很好的描述。並可從直方圖可看出殘差呈現常態分配。
+```{r}
+checkresiduals(arima_fluts)
+```
+
+
+### Fitting Model method 2 (Differencing)
+方法二將直接觀察ACF、PACF圖形，並找出應擬合之模型。首先先將資料作一次差分，並可藉繪製出的ACF、PACF圖形看出，ACF從lag2處開始tailoff，對應至AR(2)模型。且PACF從lag1開始cutoff，對應至MA(1)模型。另外，對資料作季節性差分，可看出其ACF從lag2處開始tailoff，對應至AR(2)模型。且PACF從lag1開始cutoff，對應至MA(1)模型。故最後選擇SARIMA(2,1,1)*(2,1,1)，其中週期為12。並可從殘差之ACF圖看出似white noise。
+```{r}
+#original data
+{par(mfrow=c(3,1))
+  z = x$interest_over_time[,2]
+  par(mfrow=c(3,1))
+  ts.plot(z) 
+  acf(z)
+  pacf(z)}
+
+#diff 
+dz<-diff(z)
+{par(mfrow=c(3,1))
+  {ts.plot(dz)
+    abline(h=mean(dz))
+}
+  acf(dz)
+  pacf(dz)}
+
+#seasonal diff
+d12z<-diff(dz,12)
+{par(mfrow=c(3,1))
+  {ts.plot(d12z)
+    abline(h=mean(d12z))
+}
+  acf(d12z)
+  pacf(d12z)}
+```
+```{r message=F, warning=F}
+par(mfrow=c(1,1))
+#choose model
+sarima(z, 2,1,1,2,1,1,12) 
+```
+
+#### Forecast
+同時繪製由方法一及方法二模型產生出的20步預測值。
+```{r}
+par(mfrow=c(1,2))
+{ts.plot(z)
+  sarima.for(z, 20, 1,0,2)}
+```
+
+#### Efficiency
+將資料切分成訓練集及驗證集，並計算以兩擬合後模型，套用至驗證集上的rmse。可得兩方法結果相近。
+```{r}
+# splitting data into train and valid sets
+train = z[1:168]
+valid = z[168:length(z)]
+
+# training model
+model = arima(train, order=c(1,0,2), method = 'ML')
+model2 = arima(train, order=c(2,1,1), season = list(order=c(2,1,1), period=12), method = 'ML')
+
+# model summary
+summary(model)
+summary(model2)
+# forecasting
+forecast = predict(model,42)
+forecast$pred
+forecast2 = predict(model2,42)
+forecast2$pred
+# evaluation
+rmse(valid, forecast$pred)
+rmse(valid, forecast2$pred)
+```
+
+## Dataset MLB
+### Basic information
+此為關鍵字為MLB之資料集，並針對其作線圖及直方圖。
+```{r}
+a = gtrends("MLB", time="all")
+plot(a)
+b = gtrends("MLB", time="today 12-m")
+plot(b)
+names(a)
+hist(a$interest_over_time[,2], 10) 
+head(a$related_topics) 
+
+```
+
+### EDA
+```{r}
+us_mlb<-a$interest_over_time[,1:2]
+str(us_mlb)
+us_mlb[,1]<-as.factor(us_mlb[,1])
+attach(us_mlb)
+mlbts<-ts(hits,c(2004,1),c(2021,4),12)
+str(mlbts)
+mlbts
+frequency(mlbts)
+cycle(mlbts)
+summary(mlbts)
+```
+
+#### Box-cox
+利用Box-Cox transformation，使轉換後的資料變異數齊一，更似常態分佈。 其中，計算出的lambda值為-0.9999242，並將轉換後的資料繪製成圖。
+```{r}
+par(mfrow=c(1,1))
+mlb<-ts(a$interest_over_time[,2])
+lambda <- BoxCox.lambda(log(mlb))
+print(lambda)
+plot.ts(BoxCox(mlb, lambda = lambda), main='Box-Cox transformation')
+```
+
+#### TS-plot
+```{r}
+plot(mlbts,xlab="Year", ylab = "mlb hits",
+    main="Monthly US mlb hits from 2004 to 2021")
+```
+
+#### ACF of fluts
+繪製資料之ACF圖
+```{r}
+autoplot(acf(mlbts,plot=FALSE))+ 
+  labs(title="Correlogram of Monthly US mlb hits from 2004 to 2021") + theme_classic()
+```
+
+#### PACF of fluts
+繪製資料之PACF圖
+```{r}
+autoplot(pacf(mlbts,plot=FALSE))+ 
+  labs(title=" Partial Correlogram of Monthly US mlb hits from 2004 to 2021") + theme_classic()
+
+```
+
+#### Boxplot
+繪製資料之盒鬚圖，可看出2004~2021平均而言，關鍵字搜尋次數集中於4~10月。
+```{r}
+boxplot(mlbts~cycle(mlbts),xlab="Month", ylab = "mlb hits" 
+        ,main ="Monthly US mlb hits from 2004 to 2021")
+```
+
+#### decomposition
+將原始資料、趨勢、季節性、殘差分別繪製成圖。
+```{r}
+decomp_mlbts <- decompose(mlbts,"multiplicative")
+autoplot(decomp_mlbts) + theme_classic()
+```
+
+### Fitting Model method 1
+
+#### Test stationality
+以ADF test檢定平穩性，檢定結果顯著，此資料集為平穩序列。
+```{r}
+adf.test(mlbts)
+```
+
+#### Fit arima
+方法一將以auto.arima函數擬和模型。可得結果為ARIMA(1,0,1)(0,1,1)[12]。並可知AIC=1314.69。
+```{r}
+arima_mlbts <- auto.arima(mlbts)
+arima_mlbts
+```
+
+#### Forcasting
+繪製36步預測，並加上信賴區間。
+```{r}
+fore_mlbts <- forecast(arima_mlbts, level = c(95), h = 36)
+autoplot(fore_mlbts) + theme_classic()
+```
+
+#### Residual
+對殘差作圖分析，可從ACF圖中看出直接落於95%信賴區間中，顯示此模型對相關結構作很好的描述。並可從直方圖可看出殘差呈現常態分配。
+```{r}
+checkresiduals(arima_mlbts)
+```
+
+
+### Fitting Model method 2 (Differencing)
+方法二將直接觀察ACF、PACF圖形，並找出應擬合之模型。首先先將資料作一次差分，並可藉繪製出的ACF、PACF圖形看出，ACF從lag1處開始cutoff，對應至MA(1)模型。另外，對資料作季節性差分，可看出其ACF從lag1處開始cutoff，對應至MA(1)模型。故最後選擇SARIMA(0,1,1)*(0,1,1)，其中週期為12。並可從殘差之ACF圖看出似white noise。
+```{r}
+#original data
+{par(mfrow=c(3,1))
+y = a$interest_over_time[,2]
+par(mfrow=c(3,1))
+ts.plot(y) 
+acf(y)
+pacf(y)}
+
+#diff 
+dy<-diff(y)
+{par(mfrow=c(3,1))
+{ts.plot(dy)
+ abline(h=mean(dy))
+}
+acf(dy)
+pacf(dy)}
+
+#seasonal diff
+d12y<-diff(dy,12)
+{par(mfrow=c(3,1))
+{ts.plot(d12y)
+abline(h=mean(d12y))
+}
+acf(d12y)
+pacf(d12y)}
+
+```
+
+```{r warning=F, message=F}
+par(mfrow=c(1,1))
+#choose model
+sarima(y, 0,1,1,0,1,1,12) 
+
+```
+
+#### Forecast
+同時繪製由方法一及方法二模型產生出的20步預測值。
+```{r}
+par(mfrow=c(1,2))
+{ts.plot(y)
+sarima.for(y, 20, 0,1,1, 0,1,1, 12)}
+
+```
+
+#### Efficiency
+將資料切分成訓練集及驗證集，並計算以兩擬合後模型，套用至驗證集上的rmse。可得兩方法結果相近。
+```{r}
+# splitting data into train and valid sets
+trainy = z[1:168]
+validy = z[168:length(y)]
+
+# training model
+modely = arima(trainy, order=c(1,0,0), season = list(order=c(0,1,1), period=12), method = 'ML')
+model2y = arima(trainy, order=c(0,1,1), season = list(order=c(0,1,1), period=12), method = 'ML')
+
+# model summary
+summary(modely)
+summary(model2y)
+# forecasting
+forecasty = predict(modely,42)
+forecasty$pred
+forecast2y = predict(model2y,42)
+forecast2y$pred
+# evaluation
+rmse(validy, forecasty$pred)
+rmse(validy, forecast2y$pred)
+```
+
+
+## Dataset Football
+### Basic information
+此為關鍵字為football之資料集，並針對其作線圖及直方圖。
+```{r}
+h = gtrends("football", time="all")
+plot(h)
+names(h)
+hist(h$interest_over_time[,2], 10) 
+head(h$related_topics) 
+
+```
+
+### EDA
+```{r}
+us_foot<-h$interest_over_time[,1:2]
+str(us_foot)
+us_foot[,1]<-as.factor(us_foot[,1])
+attach(us_foot)
+footts<-ts(hits,c(2004,1),c(2021,4),12)
+str(footts)
+footts
+frequency(footts)
+cycle(footts)
+summary(footts)
+```
+
+#### Box-cox
+利用Box-Cox transformation，使轉換後的資料變異數齊一，更似常態分佈。 其中，計算出的lambda值為-0.9999242，並將轉換後的資料繪製成圖。
+```{r}
+par(mfrow=c(1,1))
+foot<-ts(h$interest_over_time[,2])
+lambda <- BoxCox.lambda(log(foot))
+print(lambda)
+plot.ts(BoxCox(foot, lambda = lambda), main='Box-Cox transformation')
+```
+
+#### TS-plot
+```{r}
+plot(footts,xlab="Year", ylab = "mlb hits",
+     main="Monthly US football hits from 2004 to 2021")
+```
+
+#### ACF of footts
+繪製資料之ACF圖
+```{r}
+autoplot(acf(footts,plot=FALSE))+ 
+  labs(title="Correlogram of Monthly US football hits from 2004 to 2021") + theme_classic()
+```
+
+#### PACF of footts
+繪製資料之PACF圖
+```{r}
+autoplot(pacf(footts,plot=FALSE))+ 
+  labs(title=" Partial Correlogram of Monthly US football hits from 2004 to 2021") + theme_classic()
+
+```
+
+#### Boxplot
+繪製資料之盒鬚圖，可看出2004~2021平均而言，關鍵字搜尋次數於9月份到達最高峰。
+```{r}
+boxplot(footts~cycle(footts),xlab="Month", ylab = "football hits" 
+        ,main ="Monthly US football hits from 2004 to 2021")
+```
+
+#### decomposition
+將原始資料、趨勢、季節性、殘差分別繪製成圖。
+```{r}
+decomp_footts <- decompose(footts,"multiplicative")
+autoplot(decomp_footts) + theme_classic()
+```
+
+### Fitting Model method 1
+
+#### Test stationality
+以ADF test檢定平穩性，檢定結果顯著，此資料集為平穩序列。
+```{r}
+adf.test(footts)
+
+```
+
+#### Fit arima
+方法一將以auto.arima函數擬和模型。可得結果為ARIMA(1,0,0)(0,1,2)[12] 。並可知AIC=1231.24。
+```{r}
+arima_footts <- auto.arima(footts)
+arima_footts
+```
+
+#### Forcasting
+繪製36步預測，並加上信賴區間。
+```{r}
+fore_footts <- forecast(arima_footts, level = c(95), h = 36)
+autoplot(fore_footts) + theme_classic()
+```
+
+#### Residual
+對殘差作圖分析，可從ACF圖中看出直接落於95%信賴區間中，顯示此模型對相關結構作很好的描述。並可從直方圖可看出殘差呈現常態分配。
+```{r}
+checkresiduals(arima_footts)
+```
+
+
+### Fitting Model method 2 (Differencing)
+方法二將直接觀察ACF、PACF圖形，並找出應擬合之模型。首先先將資料作一次差分，並可藉繪製出的ACF、PACF圖形看出，ACF從lag1處開始tailoff，對應至AR(1)模型。且PACF從lag1開始cutoff，對應至MA(1)模型。另外，對資料作季節性差分，可看出其ACF從lag1處開始tailoff，對應至AR(1)模型。且PACF從lag1開始cutoff，對應至MA(1)模型。故最後選擇SARIMA(1,1,1)*(1,1,1)，其中週期為12。並可從殘差之ACF圖看出似white noise。
+```{r}
+#original data
+{par(mfrow=c(3,1))
+  j = h$interest_over_time[,2]
+  par(mfrow=c(3,1))
+  ts.plot(j) 
+  acf(j)
+  pacf(j)}
+
+#diff 
+dj<-diff(j)
+{par(mfrow=c(3,1))
+  {ts.plot(dj)
+    abline(h=mean(dj))
+}
+  acf(dj)
+  pacf(dj)}
+
+#seasonal diff
+d12j<-diff(dj,12)
+{par(mfrow=c(3,1))
+  {ts.plot(d12j)
+    abline(h=mean(d12j))
+}
+  acf(d12j)
+  pacf(d12j)}
+
+```
+ 
+```{r warning=F, message=F}
+par(mfrow=c(1,1))
+#choose model
+sarima(j, 1,1,1,1,1,1,12) 
+
+
+```
+
+#### Forecast
+同時繪製由方法一及方法二模型產生出的20步預測值。
+```{r}
+#forecast
+par(mfrow=c(1,2))
+{ts.plot(j)
+  sarima.for(j, 20, 1,1,1, 1,1,1, 12)}
+
+```
+
+#### Efficiency
+將資料切分成訓練集及驗證集，並計算以兩擬合後模型，套用至驗證集上的rmse。可得兩方法結果相近。
+```{r}
+# loading packages
+# install.packages('Metrics')
+library(forecast)
+library(Metrics)
+
+# splitting data into train and valid sets
+trainj = j[1:168]
+validj = j[168:length(j)]
+
+# training model
+modelj = arima(trainj, order=c(1,0,0), season = list(order=c(0,1,2), period=12), method = 'ML')
+model2j = arima(trainj, order=c(1,1,1), season = list(order=c(1,1,1), period=12), method = 'ML')
+
+# model summary
+summary(modelj)
+summary(model2j)
+# forecasting
+forecastj = predict(modelj,42)
+forecastj$pred
+forecast2j = predict(model2j,42)
+forecast2j$pred
+# evaluation
+rmse(validj, forecastj$pred)
+rmse(validj, forecast2j$pred)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

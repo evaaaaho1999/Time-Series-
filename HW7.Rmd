@@ -1,0 +1,461 @@
+---
+title: "Homework 7 (due 2021-6-6)" 
+author: "106071002李嘉蓉、106070020何羿樺"
+date: "2021/6/13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The goal of homework 7 is to practice the analysis procedures for multiple time series data. We will use an economic data set. The data consist of3 economic variables (CPI, GDP, Unemployment rate) for G7 countries (Canada, France, Germany, Italy, Japan, UK, USA) in 1991-2019 (seasonal data with 4 observations in a year).
+
+
+## Part1 : The data for CPI (7 series)---李嘉蓉
+```{r}
+```
+
+### Read the data 
+
+```{r}
+library(autoTS)
+library(vars)
+library(forecast)
+library(aTSA)
+library(astsa)
+dat1 = read.csv("C:/Users/cindy/time_series/econ_data.csv") #put the data under a correct directory
+dim(dat1)
+
+head(dat1)
+```
+
+
+繪製每個國家之下，三個變數對應的時間序列圖形
+```{r}
+series_name = colnames(dat1)
+for (i in 1:7){
+    y = dat1[,1+(i-1)*3+(1:3)]
+    ts.plot(y, col=1:3) 
+    legend("topleft", legend=series_name[1+(i-1)*3+(1:3)], col=1:3, lty=1, lwd=2, bty="n")
+}
+```
+
+
+繪製每個變數之下，七個國家所對應的時間序列圖
+```{r}
+#series_name = colnames(dat1)
+for (i in 1:3){
+    y = dat1[,i+seq(1,21,by=3)]
+    ts.plot(y, col=1:7) 
+    legend("bottomright", legend=series_name[i+seq(1,21,by=3)], col=1:7, lty=1, lwd=2, bty="n")
+}
+```
+
+繪製七組時間序列之ACF圖
+```{r, fig.height=8, fig.width=8}
+#ACF for CPI
+acf(dat1[,1+seq(1,21,by=3)], max.mfrow = 7, mar = c(3, 2.25, 2, 0.55))
+```
+
+繪製七組時間序列之PACF圖
+```{r,fig.height=8, fig.width=8}
+pacf(dat1[,1+seq(1,21,by=3)], max.mfrow = 7, mar = c(3, 2.25, 2, 0.55))
+```
+
+繪製七組時間序列之散布圖，可發現除了日本以外，其餘國家的CPI皆呈現高度正相關
+```{r}
+pairs(dat1[,1+seq(1,21,by=3)], pch=16, cex=0.3, col=4)
+```
+
+以summary函數呈現基本統計量
+```{r}
+summary(dat1[,1+seq(1,21,by=3)])
+```
+
+將七組時間序列各別先取log轉換，使得變異數齊一，再取一階差分使得序列變平穩。
+```{r}
+lambda1 <- BoxCox.lambda(dat1[,2])
+a=BoxCox(dat1[,2], lambda = lambda1)
+
+lambda2 <- BoxCox.lambda(dat1[,5])
+b=BoxCox(dat1[,5], lambda = lambda2)
+
+lambda3 <- BoxCox.lambda(dat1[,8])
+c=BoxCox(dat1[,8], lambda = lambda3)
+
+lambda4 <- BoxCox.lambda(dat1[,11])
+d=BoxCox(dat1[,11], lambda = lambda4)
+
+lambda5 <- BoxCox.lambda(dat1[,14])
+e=BoxCox(dat1[,14], lambda = lambda5)
+
+lambda6 <- BoxCox.lambda(dat1[,17])
+f=BoxCox(dat1[,17], lambda = lambda6)
+
+lambda7 <- BoxCox.lambda(dat1[,20])
+g=BoxCox(dat1[,20], lambda = lambda7)
+
+Can=diff(a,1)
+Fran=diff(b,1)
+Ger=diff(c,1)
+Ita=diff(d,1)
+Jap=diff(e,1)
+UK=diff(f,1)
+US=diff(g,1)
+
+df=data.frame("Can"=Can,"Fran"=Fran,"Ger"=Ger,"Ita"=Ita,"Jap"=Jap,"UK"=UK,"US"=US)
+```
+
+
+將轉換、差分過後的序列繪製時間序列圖。可見原本趨勢已去除，變異數亦相對齊一
+```{r}
+df_name=colnames(df)
+
+y = df[,1:7]
+ts.plot(y, col=1:7) 
+legend("bottomright", legend=df_name[1:7], col=1:7, lty=1, lwd=2, bty="n")
+```
+
+繪製ACF、PACF圖，可見單變量時間序列之下仍存在週期性的相關性。其中，週期可約莫看出為4。
+```{r,fig.height=8, fig.width=8}
+acf(df[,1:7], max.mfrow = 7, mar = c(3, 2.25, 2, 0.55))
+pacf(df[,1:7],max.mfrow = 7, mar = c(3, 2.25, 2, 0.55))
+```
+
+以summary函數呈現處理過後數據之基本統計量，可見平均皆近乎等於0
+```{r}
+summary(df[,1:7])
+```
+
+
+基於information criteria 選取最佳VAR order。可得結果為:AIC準則選出的模型為VAR(10)，BIC(SC)準則選出的模型為VAR(1)，FPE準則選出的模型為VAR(2)
+```{r}
+fit.aic=VARselect(y,lag.max = 10, type = "both",season = 4)
+fit.aic
+#AIC:10, HQ:1, BIC(SC):1, FPE:1
+```
+
+繪製出AIC、BIC、HQ curve
+```{r}
+#plot information criteria(with seasonal mean)
+par(mfcol=c(1,1))
+ts.plot(t(fit.aic$crit[1:3,]), col=1:3, lwd=2, xlab="AR Order")
+abline(v=fit.aic$sel[1:3],lty=2,col=1:3,lwd=2)
+legend("topleft",legend=rownames(fit.aic$crit[1:3,]),col=1:3,lty=1, bty="n")
+title("Information Criteria")
+```
+
+根據FPE的order選取結果建模，即VAR(2)且season=4。再繪製model fitted line及對模型殘差做ACF、PACF圖。可看出模型無法捕捉一些偏離較大的值。另外，由ACF、PACF圖可觀察出單變量之下，殘差似white noise process的結構。
+```{r,fig.height=8, fig.width=8}
+fit1 = VAR(y, p=2, type="both",season=4)# "both" means fitting (constant + linear trend)
+summary(fit1)
+coef(fit1)   #including s.d(estimate)
+
+fit1.pred = fitted(fit1) #output fitted value
+fit1$resid = resid(fit1) #output resid
+acf(fit1$resid,max.mfrow = 7, mar = c(3, 2.25, 2, 0.55))          #check WN for resid   
+plot(fit1)               
+```
+
+繪製擬合模型的預測結果
+```{r}
+fit1$pred = predict(fit1, n.ahead = 24, ci = 0.95)
+fanchart(fit1$pred, ci=c(0.025,0.975), colors=c("#F7E6204D", "#FDE7254D"),mar = c(2,2,2,1)) 
+```
+
+Some diagnostic tests:
+對配適好模型之殘差做Portmanteau test。可看出兩模型殘差的Portmanteau test p-value值皆不顯著，即殘差無法拒絕服從white noise process的假設。可知配適結果並非不好的模型。
+```{r}
+#fit1.new1
+serial.test(fit1, lags.pt=8, type="PT.adjusted")  #make finite sample adjustment
+```
+
+檢查序列間是否存在granger causality 和 instantaneous causality。舉例而言，觀察日本、美國、英國三個序列分別對其餘序列的因果關係。就結果可知，日本及英國對其餘時間序列均無granger causality，顯示兩序列的過去值對其餘序列無顯著解釋能力。然而，美國的過去值則對其餘序列有顯著解釋能力，即美國這筆序列對其餘序列具有預測能力。
+```{r}
+causality(fit1,cause= c("Jap"))
+causality(fit1, cause= "US")
+causality(fit1, cause= "UK")
+```
+
+
+
+## Part2 : The data for UK (3 series)---何羿樺
+## Library
+```{r message=F, warning=F}
+library(aTSA)
+library(vars)
+library(forecast)
+library(tseries)
+```
+
+## Data cleaning
+```{r message=F, warning=F}
+econ<-read.csv("C:/Users/cindy/time_series/econ_data.csv", header = T)
+dim(econ)
+head(econ)
+econ[is.na(econ)] #no NAs
+econ$DATE<-as.Date(econ$DATE, format =  "%Y/%m/%d" )
+summary(econ)
+str(econ)
+```
+
+***
+>確保資料型態以及缺失值等等。
+
+## EDA
+```{r message=F, warning=F}
+par(mfrow=c(1,1))
+series_name = colnames(econ)
+for (i in 1:7){
+  y = econ[,1+(i-1)*3+(1:3)]
+  ts.plot(y, col=1:3) 
+  legend("topleft", legend=series_name[1+(i-1)*3+(1:3)], col=1:3, lty=1, lwd=2, bty="n")
+}
+```
+
+
+## Data Preprocessing
+### box-cox
+```{r message=F, warning=F}
+# box-cox
+par(mfrow=c(1,1))
+lambda <- BoxCox.lambda(econ$United.Kingdom_CPI)
+print(lambda)
+plot.ts(BoxCox(econ$United.Kingdom_CPI, lambda = lambda), main='Box-Cox transformation')
+kc1<-BoxCox(econ$United.Kingdom_CPI, lambda = lambda)
+
+par(mfrow=c(1,1))
+lambda <- BoxCox.lambda(econ$United.Kingdom_gdp)
+print(lambda)
+plot.ts(BoxCox(econ$United.Kingdom_gdp, lambda = lambda), main='Box-Cox transformation')
+kg1<-BoxCox(econ$United.Kingdom_gdp, lambda = lambda)
+
+par(mfrow=c(1,1))
+lambda <- BoxCox.lambda(econ$United.Kingdom_unem)
+print(lambda)
+plot.ts(BoxCox(econ$United.Kingdom_unem, lambda = lambda), main='Box-Cox transformation')
+ku1<-BoxCox(econ$United.Kingdom_unem, lambda = lambda)
+```
+
+***
+> 利用Box-Cox transformation，使轉換後的資料變異數齊一，更似常態分佈。 其中，計算出的lambda值分別為-0.5051194，0.6011321，0.1844793，並將轉換後的資料繪製成圖，並存為新的變數。
+
+### Differencing
+```{r message=F, warning=F}
+dkc<-diff(kc1)
+{par(mfrow=c(3,1))
+  {ts.plot(dkc)
+    abline(h=mean(dkc))
+}
+  acf(dkc)
+  pacf(dkc)}
+
+dkg<-diff(kg1)
+{par(mfrow=c(3,1))
+  {ts.plot(dkg)
+    abline(h=mean(dkg))
+}
+  acf(dkg)
+  pacf(dkg)}
+
+dku<-diff(ku1)
+{par(mfrow=c(3,1))
+  {ts.plot(dku)
+    abline(h=mean(dku))
+}
+  acf(dku)
+  pacf(dku)}
+```
+
+### ADF Test
+```{r message=F}
+adf.test(dkc)
+adf.test(dkg)
+adf.test(dku)
+```
+
+***
+> 經由一次差分消除local trend，並利用ADF Test測試stationality. ADF Test的p-value為0.01，0.01，0.015，說明這三個序列皆為stationary.
+
+
+### Plots
+```{r message=F, warning=F}
+uk=cbind(dkc,dkg,dku)
+colnames(uk)=c('United.Kingdom_CPI','United.Kingdom_gdp','United.Kingdom_unem')
+ts.plot(uk, col=1:3) 
+legend("bottomright", legend=colnames(uk), col=1:3, lty=1, lwd=2, bty="n")
+```
+
+***
+> 此圖為經過差分的序列圖。
+
+### ACF plots
+```{r message=F, warning=F}
+pairs(uk, col=4, pch=16)
+par(mfrow=c(1,1))
+acf(uk) #sample ccf
+pacf(uk) 
+```
+
+***
+>繪製出這三筆data的scatter plot 和 ccf。
+
+## Model fitting
+### order selection
+```{r message=F, warning=F}
+fit = VARselect(uk, lag.max=10, type="both")
+fit
+names(fit)
+par(mfcol=c(1,1))
+ts.plot(t(fit$crit[1:3,]), col=1:3, lwd=2, xlab="AR Order")
+abline(v=fit$sel[1:3],lty=2,col=1:3,lwd=2)
+legend("topleft",legend=rownames(fit$crit[1:3,]),col=1:3,lty=1, bty="n")
+title("Information Criteria")
+```
+
+***
+> 利用VARselect選擇出最適合的order。根據BIC，應該選擇order=1，根據AIC、FPC、HQ，應選擇order=4。因此以下為兩個模型的fitting。
+
+## Order=1
+```{r message=F, warning=F}
+fit1 = VAR(uk, p=1, type="both",season=4)
+summary(fit1)
+```
+
+### Serial Test
+```{r}
+serial.test(fit1, lags.pt = 8, type = "PT.asymptotic")
+```
+
+***
+>由於serial test的結果不顯著，可知無法拒絕服從white noise process的假設。
+
+
+### Coefficients
+```{r message=F, warning=F}
+Acoef(fit1)  #estimated AR coeff matrix
+round(Bcoef(fit1),5)  #all estimated coeff
+```
+
+***
+>上述結果即為參數估計的結果。
+
+
+### Residuals
+```{r message=F, warning=F}
+fit1$resid = resid(fit1)
+acf(fit1$resid,52)
+```
+
+***
+> 由上圖可知，residuals 是 white noise process. 
+
+### Model plots
+```{r message=F, warning=F}
+plot(fit1) #plot fitted values and residuals w/ ACF and PACF
+```
+
+***
+>結果為正相關。
+
+### Causality
+```{r message=F, warning=F}
+causality(fit1, cause= "United.Kingdom_CPI")
+causality(fit1, cause= "United.Kingdom_gdp")
+causality(fit1, cause= "United.Kingdom_unem")
+```
+
+***
+>
+檢查序列間是否存在granger causality 和 instantaneous causality。舉例而言，觀察United.Kingdom_CPI、United.Kingdom_gdp、United.Kingdom_unem分別對其他兩者的因果關係。
+
++ 由第一個causality的結果可知不能拒絕H0，United.Kingdom_CPI 對於United.Kingdom_gdp和United.Kingdom_unem無顯著相關性，然而他們有當期的相關性。
++ 由第二個causality的結果可知可以拒絕H0，United.Kingdom_gdp 對於United.Kingdom_CPI和United.Kingdom_unem有相關性，並且同時有當期的相關性。
++ 由第一個causality的結果可知不能拒絕H0，United.Kingdom_unem 對於United.Kingdom_gdp和United.Kingdom_CPI無顯著相關性，然而他們有當期的相關性。
+
+>就結果可知，United.Kingdom_CPI及United.Kingdom_unem對其餘時間序列均無granger causality，顯示兩序列的過去值對其餘序列無顯著解釋能力。然而，United.Kingdom_gdp則對其餘序列有顯著解釋能力，即United.Kingdom_gdp這筆序列對其餘序列具有預測能力。
+
+### Prediction
+```{r message=F, warning=F}
+fit1$pred = predict(fit1, n.ahead = 24, ci = 0.95)
+plot(fit1$pred, lwd=2) 
+fanchart(fit1$pred) 
+```
+
+
+## Order=4
+```{r message=F, warning=F}
+fit4 = VAR(uk, p=4, type="both",season=4)
+summary(fit4)
+```
+
+### Serial Test
+```{r}
+serial.test(fit4, lags.pt = 8, type = "PT.asymptotic")
+```
+
+***
+>由於serial test的結果不顯著，可知無法拒絕服從white noise process的假設。
+
+### Coefficients
+```{r message=F, warning=F}
+Acoef(fit4)  #estimated AR coeff matrix
+round(Bcoef(fit4),5)  #all estimated coeff
+```
+
+***
+>上述結果即為參數估計的結果。
+
+### Residuals
+```{r message=F, warning=F}
+fit4$resid = resid(fit4)
+acf(fit4$resid,52)
+```
+
+***
+> 由上圖可知，residuals 是 white noise process. 
+
+### Model plots
+```{r message=F, warning=F}
+plot(fit4) #plot fitted values and residuals w/ ACF and PACF
+```
+
+***
+>結果為正相關。
+
+### Causality
+```{r message=F, warning=F}
+causality(fit4, cause= "United.Kingdom_CPI")
+causality(fit4, cause= "United.Kingdom_gdp")
+causality(fit4, cause= "United.Kingdom_unem")
+```
+
+***
+>
+檢查序列間是否存在granger causality 和 instantaneous causality並觀察United.Kingdom_CPI、United.Kingdom_gdp、United.Kingdom_unem分別對其他兩者的因果關係。
+
++ 由第一個causality的結果可知可以拒絕H0，United.Kingdom_CPI 對於United.Kingdom_gdp和United.Kingdom_unem有相關性，然而，並沒有當期的相關性。
++ 由第二個causality的結果可知不能拒絕H0，United.Kingdom_gdp 對於United.Kingdom_CPI和United.Kingdom_unem無顯著相關性，然而他們有當期的相關性。
++ 由第一個causality的結果可知不能拒絕H0，United.Kingdom_unem 對於United.Kingdom_gdp和United.Kingdom_CPI無顯著相關性，然而他們有當期的相關性。
+
+>就結果可知，United.Kingdom_gdp及United.Kingdom_unem對其餘時間序列均無granger causality，顯示兩序列的過去值對其餘序列無顯著解釋能力。然而，United.Kingdom_CPI則對其餘序列有顯著解釋能力，即United.Kingdom_gdp這筆序列對其餘序列具有預測能力。
+
+### Prediction
+```{r message=F, warning=F}
+fit4$pred = predict(fit4, n.ahead = 24, ci = 0.95)
+plot(fit4$pred, lwd=2) 
+fanchart(fit4$pred) 
+```
+
+
+### AIC
+```{r}
+AIC1<-2*9-2*638.761
+AIC1
+AIC4<-2*17-2*642.203
+AIC4
+```
+
+***
+> 由於AIC1(-1259.522) < AIC4(-1250.406)，可得知fit1模型的預測能力較好。

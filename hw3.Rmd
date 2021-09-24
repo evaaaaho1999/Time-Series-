@@ -1,0 +1,204 @@
+---
+title: "Time Series HW 3"
+author: '106070020'
+date: "2021-03-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 3.6
+
+```{r}
+#Question 3.6
+
+z<-c(1,0,0.9) # Find the roots of the autoregressive polynomial
+polyroot(z)
+
+par(mfrow=c(1,2))
+# ACF plot
+ACF=ARMAacf(ar=c(0,-0.9), ma=0,50)
+plot(ACF, type='h', xlab="lag", main="ACF of AR(2) model")
+abline(h=0)
+#correlation plot
+P=ARMAacf(ar=c(0,-0.9),lag.max=100)
+plot(P, type='l', xlab="lag", main="Correlation of AR(2)model")
+```
+
+
+## Qusetion 3.7 
+### (a)
+```{r}
+#(a) x_t + 1.6x_t-1 + .64x_t-2 = w_t
+z1<-c(1,1.6,0.64)
+polyroot(z1)
+# In z1, the roots are real and equal(Z1=Z2=Z0), then rho(h)=Z0^-h*(c1+c2h)
+
+```
+
+#### Solve for constant
+
+```{r}
+#solve for constant
+A<-matrix(c(1,0,-1.25,-1.25),2,2,T)
+B<-matrix(c(1,-1.6/1.64),2,1)
+solve(A,B)
+# The answer is c1 and c2(constant)
+```
+
+#### plot ACF
+```{r}
+#plot ACF
+ACF1=ARMAacf(ar=c(-1.6,-.64), lag.max=10)
+plot(ACF1, type='h', xlab="lag", main="ACF of AR(2)(a) model")
+abline(h=0)
+```
+
+###(b)
+
+```{r}
+#(b) x_t - .40x_t-1 - .45x_t-2 = w_t
+z2<-c(1,-.4,-.45)
+polyroot(z2)
+# In z2, the roots (Z1 and Z2) are real and distinct, so the rho(h)=c1*Z1^-h+c2*Z2^-h
+```
+
+####solve for constant
+```{r}
+A<-matrix(c(1.11,-2,1,1),2,2,T)
+B<-matrix(c(0.4/0.55,1),2,1)
+solve(A,B)
+# The answer is c1 and c2(constant)
+```
+
+####plot ACF
+
+```{r}
+ACF2=ARMAacf(ar=c(.4,-.45), lag.max=10)
+plot(ACF2, type='h', xlab="lag", main="ACF of AR(2)(b) model")
+abline(h=0)
+```
+
+###(c)
+```{r}
+#(c) x_t - 1.2x_t-1 + .85x_t-2 = w_t
+z3<-c(1,-1.2,.85)
+polyroot(z3)
+# In z3, the two roots (Z1 and Z2) are a complex and conjugate pair, Z1=Z2_bar, then c2=c1_bar(because the rho(h) is real), and rou(h)=c1*Z1^-h + c1_bar*Z1_bar^-h. 
+
+```
+
+#### solve for constant
+
+```{r}
+Z1<-polyroot(z3)[1]
+Z2<-polyroot(z3)[2]
+A<-matrix(c(1,1,Z1,Z2),2,2,T)
+B<-matrix(c(1,1.2/1.85),2,1)
+solve(A,B)
+# The answer is c1 and c2(constant)
+```
+
+#### plot ACF
+
+```{r}
+ACF3=ARMAacf(ar=c(1.2,.85), lag.max=10)
+plot(ACF3, type='h', xlab="lag", main="ACF of AR(2)(c) model")
+abline(h=0)
+```
+
+
+## Qusetion 3.9 
+
+```{r}
+# Generate 100 observation for three models: ARMA(1,1), ARMA(0,1),ARMA(1,0); theta = .9, phi = .6
+
+ARMA11 <- arima.sim(model=list(ar=.6,ma=.9),n=100)
+ARMA01 <- arima.sim(model=list(ma=.9),n=100)
+ARMA10 <- arima.sim(model=list(ar=.6),n=100)
+```
+
+
+```{r}
+# compute sample ACF for all three simulations
+
+ARMA11acf <- acf(ARMA11,plot=F)
+ARMA01acf <- acf(ARMA01,plot=F)
+ARMA10acf <- acf(ARMA10,plot=F)
+```
+
+```{r}
+# compute theoretical ACFs for all models
+#
+acf11 <- ARMAacf(ar=.6,ma=.9,lag.max=20)
+acf01 <- ARMAacf(ma=.9,lag.max=20)
+acf10 <- ARMAacf(ar=.6,lag.max=20)
+```
+
+```{r}
+# plot and compare each other
+
+plot(ARMA11acf, main="ARMA 11 ACF comparison")
+lines(ARMA11acf$lag,acf11)
+# Comparison: In the graph1, the theoretical ACF gradually converge to 0, while the sample ARMA 11 ACF still larger than 0 after the theoretical ACF become near to 0. 
+```
+
+```{r}
+plot(ARMA01acf, main="ARMA 01 ACF comparison")
+lines(ARMA01acf$lag,acf01)
+# Comparison: In the graph2, the theoretical ACF quickly converge to 0, while the sample ARMA 01 ACF still larger than 0 after the theoretical ACF become near to 0. 
+```
+
+```{r}
+plot(ARMA10acf, main="ARMA 10 ACF comparison")
+lines(ARMA10acf$lag,acf10)
+# Comparison: In the graph3, the theoretical ACF gradually converge to 0, while the sample ARMA 10 ACF still larger than 0 after the theoretical ACF become near to 0. 
+```
+
+```{r}
+# compute sample PACF and plot against sample ACF
+
+ARMA11pacf <- pacf(ARMA11,plot=F)
+ARMA01pacf <- pacf(ARMA01,plot=F)
+ARMA10pacf <- pacf(ARMA10,plot=F)
+```
+
+```{r}
+plot(ARMA11acf$acf[-1],type='l',lty=2,ylim=c(-.8,1),ylab='ACF_PACF',
+     xlab='lag',main="ACF vs PACF for ARMA11")
+abline(h=0)
+abline(h=c(.2,-.2),lty=3)
+lines(ARMA11acf$lag[-1],ARMA11pacf$acf)
+legend(12,-.25,c("ACF","PACF"),lty=c(2,1))
+```
+
+```{r}
+plot(ARMA01acf$acf[-1],type='l',lty=2,ylim=c(-.8,1),ylab='ACF_PACF',
+     xlab='lag',main="ACF vs PACF for ARMA01")
+abline(h=0)
+abline(h=c(.2,-.2),lty=3)
+lines(ARMA01acf$lag[-1],ARMA01pacf$acf)
+legend(12,-.25,c("ACF","PACF"),lty=c(2,1))
+```
+
+```{r}
+plot(ARMA10acf$acf[-1],type='l',lty=2,ylim=c(-.8,1),ylab='ACF_PACF',
+     xlab='lag',main="ACF vs PACF for ARMA10")
+abline(h=0)
+abline(h=c(.2,-.2),lty=3)
+lines(ARMA10acf$lag[-1],ARMA10pacf$acf)
+legend(12,-.25,c("ACF","PACF"),lty=c(2,1))
+```
+
+```{r}
+# We can see that the sample PACF for the ARMA11 and MA1 'tail off' around lag 2, where the sample PACF for AR1 cuts offafter lag p=1. Similarly, the sample ACF for the ARMA11 andappear to tail off slightly while the MA1 cutts off after lag1. Note however, for AR1/MA1, the tailing off happens early (lag1-2), which makes sense since we had set p=1; q=1. 
+
+```
+
+
+
+
+
+

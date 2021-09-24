@@ -1,0 +1,123 @@
+---
+title: "Time series HW 2"
+author: "106070020"
+date: "2021-03-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 2.3
+
+####(a)
+
+```{r}
+par(mfrow=c(2,2), mar=c(2.5,2.5,0,0)+.5, mgp=c(1.6,.6,0)) # set up 
+n=100
+delta = 0.01
+time = 1:n 
+for (i in 1:4){
+  x = ts(cumsum(rnorm(100,.01,1)))
+  mu=delta*time
+  regx = lm(x~0+time(x), na.action=NULL) 
+  plot(x, ylab='Random Walk w Drift')
+  abline(time, fitted(regx),col="red") 
+  abline(time, mu, col="blue")
+}
+```
+
+#### (b)
+
+```{r}
+par(mfrow=c(2,2), mar=c(2.5,2.5,0,0)+.5, mgp=c(1.6,.6,0)) # set up 
+n=100
+time = 1:n 
+for (i in 1:4){
+  w = rnorm(n,0,1)
+  y = 0.01*time + w
+  mu=0.01*time
+  regx = lm(y~0+time(y), na.action=NULL) 
+  plot(time, x, type="l", ylab='Y_t')
+  abline(time, fitted(regx),col="red") 
+  abline(time, mu, col="blue")
+}
+```
+
+#### (C)
+The distance between the fitted line and the true mean is significantly closer in the part b, as the errors in yt are independent, and this is the assumption of linear regression where as in xt the errors are correlated due to the accumulating white noise.
+
+## Question 2.6
+##### Please refer to the first page. 
+
+## Question 2.10
+
+#### (a)
+
+```{r}
+library(astsa)
+par(mfrow=c(2,1),mar=c(4,4,2,4))
+plot(oil, col="green", main="Weekly Time Series of Oil", ylab="Dollars per Barrel")
+plot(gas, col="blue", main="Weekly Time Series of Gas", ylab="Cents per Gallon")
+
+```
+##### The statistical properties of the stationary time series are the constant mean value function μt and autocovariance function γ(s,t), which both not depend on time. The autocovariance function γ(s,t) just depends on s and t only through their difference |s−t|.
+##### According to the plot, we can see that the oil and gas prices increases constantly with time until 2008. But during the period 2008 and 2010, it suddenly falled and then increased soon again. Thus, it is obvios that the oil and gas prices increases is not constant over time, so these series are not stationary.
+
+#### (b)
+##### Answer: Please refer to the last page.
+
+#### (c)
+```{r}
+par(mfrow=c(2,2), mar=c(2.5,2.5,1,0)+.5)
+plot(diff(log(oil)), main="Oil", col="green", ylab = "diff(oil)")
+acf(diff(log(oil)), 208, main="ACF Diff(Oil)")
+plot(diff(log(gas)), main="Gas", col="blue", ylab= "diff(gas)")
+acf(diff(log(gas)), 208, main="ACF Diff(Gas)")
+```
+
+##### According to the plots above, the transformed data seems to be stationary despite of the exception of oil prices in 2009 and gas prices near 2006. Also, we can observe from the ACF plots that both perform like white noise in their correlation structure. This behavior is an indication of a stationary series.
+
+####(d)
+```{r}
+ccf(diff(log(oil)),diff(log(gas)), 208, ylab="CCF")
+```
+
+##### According to the CCF plot above,  we can observe that the two series are highly correlated. The most dominant cross correlations is 0.665, which occur when lag is zero. Thus, We can note that the correlations in these two parameters are positive, so that an increase of oil's average value is likely to lead to an increase of average value of gas at the same time. Likewise, the opposite is also true.
+
+####(e)
+```{r}
+lag2.plot(diff(log(oil)), diff(log(gas)), 3)
+```
+
+##### The figure shows the gas growth rate series on the vertical axis is plotted against the lead time of oil prices on the horizontal axis. It exhibits the sample cross-correlations and the lowess fits. It indicates a strong linear relationship between gas and oil when the lag is zero with ACF at 0.66. We also see the weak and positive linear relation of 0.18, 0.01, and 0.1 when the lead times are 1, 2, and 3, respectively.
+
+####(f)
+####(i)
+```{r}
+dgas = diff(log(gas))
+doil = diff(log(oil))
+di = ifelse (doil < 0, 0, 1)
+m = ts.intersect(dgas, doil, doilL = lag(doil,-1), di)
+summary(fit <- lm(dgas~doil + doilL + di, data=m))
+```
+
+##### From the summary, the p-value is 2.2e-16, which means the regression is significant.
+
+####(ii) 
+##### Please refer to the last page. 
+
+####(iii)
+```{r}
+plot(ts(resid(fit)),ylab="",main="Residuals") 
+```
+
+##### The picture shows a white noise series,so I next plot the ACF of the residuals to confirm this. 
+
+```{r}
+plot(ts(resid(fit)),ylab="",main="Residuals") 
+acf(resid(fit))
+```
+
+##### As shown above, the ACF of residuals is indeed the white noise. This indicates the regression model is good. 

@@ -1,0 +1,110 @@
+---
+title: "hw4 Time series"
+author: '106070020'
+date: "2021年4月10日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 3.10(a)
+
+```{r}
+library(astsa)
+(regr<-ar.ols(cmort, order=2,demean=F, intercept=T))
+regr$asy.se.coef
+```
+
+***
+>Our estimates are Phi0=11.45 se(2.394), Phi1=0.43 (se=.04), Phi2=0.44 (se=.04), and sigma^2=32.32. Est. model --> Xt = 11.45 + 0.43*X(t-1) + 0.44*X(t-2)
+
+
+## 3.10(b)
+```{r}
+# Find 4 week forcasts and 95% PI's for model (a)
+cmort.pred <-predict(regr,n.ahead=4)
+# list the 95% PI for each increase
+upper <-c(cmort.pred$pred+2*cmort.pred$se)
+lower <-c(cmort.pred$pred-2*cmort.pred$se)
+list(m1=c(lower[1],upper[1]),m2=c(lower[2],upper[2]),
+     m3=c(lower[3],upper[3]),m4=c(lower[4],upper[4]))
+```
+
+## 3.10(c)
+```{r message=F}
+bound<-function(mean,sd,lambda){
+  c(mean-3*sd*sqrt(lambda/(2-lambda)),mean+3*sd*sqrt(lambda/(2-lambda)))
+}
+library(zoo)
+t<-index(cmort)
+library(qcc)
+
+l0.8<-ewmaSmooth(t,cmort,lambda=0.8)
+l0.6<-ewmaSmooth(t,cmort,lambda=0.6)
+l0.5<-ewmaSmooth(t,cmort,lambda=0.5)
+l0.2<-ewmaSmooth(t,cmort,lambda=0.2)
+
+par(mfrow=c(2,2))
+{plot(l0.8,type="l", main="EWMA with lambda=0.8", ylim=c(60,130))
+abline(h=bound(mean(cmort),sd(cmort),0.8)[1], col="red")
+abline(h=bound(mean(cmort),sd(cmort),0.8)[2], col="red")
+abline(v=150,col="blue",lty="dotted")}
+{plot(l0.6,type="l", main="EWMA with lambda=0.6", ylim=c(60,130))
+abline(h=bound(mean(cmort),sd(cmort),0.6)[1], col="red")
+abline(h=bound(mean(cmort),sd(cmort),0.6)[2], col="red")
+abline(v=150,col="blue",lty="dotted")}
+{plot(l0.5,type="l",main="EWMA with lambda=0.5", ylim=c(60,130))
+abline(h=bound(mean(cmort),sd(cmort),0.5)[1], col="red")
+abline(h=bound(mean(cmort),sd(cmort),0.5)[2], col="red")
+abline(v=150,col="blue",lty="dotted")}
+{plot(l0.2,type="l", main="EWMA with lambda=0.2", ylim=c(60,130))
+abline(h=bound(mean(cmort),sd(cmort),0.2)[1], col="red")
+abline(h=bound(mean(cmort),sd(cmort),0.2)[2], col="red")
+abline(v=150,col="blue",lty="dotted")}
+sse<-c(sum((l0.8$y-cmort)^2),
+       sum((l0.6$y-cmort)^2),
+       sum((l0.5$y-cmort)^2),
+       sum((l0.2$y-cmort)^2))
+sse<-as.data.frame(sse)
+rownames(sse)<-c('lambda=0.8','lambda=0.6', 'lambda=0.5', 'lambda=0.2')
+sse
+
+```
+
+***
+> Choose lambda=0.8, as the process is in control because most of the values are in the upper and lower bound, which are defined by control limits for EWMA. Also, by setting lambda=0.8 we can get the minimum sse. 
+
+## 3.10(d)
+```{r}
+arpred<-predict(regr,n.ahead=2)
+arpred$pred
+m2<-c(lower[2],upper[2])
+m2
+l0.8$y[490] #start:1979.404
+l0.8$y[491] #end:1979.423
+```
+
+***
+> We can see the result of 1-step-ahead prediction of ewma model when lambda=0.8 are both in the 95% prediction interval in the AR(2) model. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
